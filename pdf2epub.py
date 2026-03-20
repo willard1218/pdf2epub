@@ -499,11 +499,8 @@ def main():
 
                     img_hash = hashlib.md5(img_bytes).hexdigest()
                     rects = page.get_image_rects(xref)
-                    bbox = rects[0] if rects else (0, 0, w, h)
-
-                    dedup_key = f"{bbox}_{p_num}"
-                    if dedup_key in seen_dedup_keys: continue
-                    seen_dedup_keys.add(dedup_key)
+                    if not rects:
+                        rects = [(0, 0, w, h)]
 
                     if img_hash not in seen_hashes:
                         seen_hashes[img_hash] = f"img_{xref}_{p_num}.{ext}"
@@ -515,13 +512,19 @@ def main():
                         )
                         epub_images.append(epub_item)
                         stats.native_images += 1
-                    
-                    elements.append({
-                        'type': 'image',
-                        'bbox': bbox,
-                        'html': f'<img src="images/{seen_hashes[img_hash]}" alt="Extracted Image" />'
-                    })
-                    extracted_images = True
+
+                    for rect in rects:
+                        dedup_key = f"{rect}_{p_num}"
+                        if dedup_key in seen_dedup_keys: 
+                            continue
+                        seen_dedup_keys.add(dedup_key)
+
+                        elements.append({
+                            'type': 'image',
+                            'bbox': rect,
+                            'html': f'<img src="images/{seen_hashes[img_hash]}" alt="Extracted Image" />'
+                        })
+                        extracted_images = True
 
             # 3. Text Blocks
             text_dict = page.get_text("dict")
@@ -651,8 +654,36 @@ def main():
             is_multi_col = median_width < 0.6 * page_width
 
             if is_multi_col:
-                # Cluster columns roughly by 1/3rd of the page width
-                elements.sort(key=lambda e: (int((e['bbox'][0] + e['bbox'][2])/2 / (page_width * 0.33)), e['bbox'][1]))
+                text_centers = []
+                for e in elements:
+                    if e['type'] == 'text':
+                        x0, _, x1, _ = e['bbox']
+                        text_centers.append((x0 + x1) / 2.0)
+
+                column_centers = []
+                if text_centers:
+                    text_centers.sort()
+                    gap_threshold = page_width * 0.15
+                    current = [text_centers[0]]
+                    for c in text_centers[1:]:
+                        if abs(c - current[-1]) > gap_threshold:
+                            column_centers.append(sum(current) / len(current))
+                            current = [c]
+                        else:
+                            current.append(c)
+                    column_centers.append(sum(current) / len(current))
+
+                if column_centers:
+                    column_centers.sort()
+
+                    def column_index(bbox):
+                        x0, _, x1, _ = bbox
+                        cx = (x0 + x1) / 2.0
+                        return min(range(len(column_centers)), key=lambda i: abs(cx - column_centers[i]))
+
+                    elements.sort(key=lambda e: (column_index(e['bbox']), e['bbox'][1], e['bbox'][0]))
+                else:
+                    elements.sort(key=lambda e: (e['bbox'][1], e['bbox'][0]))
             else:
                 elements.sort(key=lambda e: (e['bbox'][1], e['bbox'][0]))
 
