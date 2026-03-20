@@ -407,11 +407,39 @@ def main():
     toc = doc.get_toc()
     chapters_info = []
 
+    def is_front_matter_title(t: str) -> bool:
+        t = (t or "").strip().lower()
+        if not t:
+            return False
+        keywords = [
+            "contents", "table of contents", "toc", "preface", "foreword",
+            "序", "序言", "前言", "目錄", "目录"
+        ]
+        return any(k in t for k in keywords)
+
     if not toc:
         chapters_info.append({"title": title, "start": 1, "level": 1})
     else:
         for item in toc:
             chapters_info.append({"title": item[1], "start": item[2], "level": item[0]})
+
+        # Determine front matter based on first non-front-matter bookmark.
+        first_non_idx = None
+        for i, c in enumerate(chapters_info):
+            if not is_front_matter_title(c["title"]):
+                first_non_idx = i
+                break
+
+        if first_non_idx is not None:
+            first_content_start = chapters_info[first_non_idx]["start"]
+            if first_content_start > 1:
+                stats.front_matter_pages = first_content_start - 1
+                # Drop front-matter bookmarks before main content to avoid overlap.
+                chapters_info = [
+                    c for c in chapters_info
+                    if not (c["start"] < first_content_start and is_front_matter_title(c["title"]))
+                ]
+                chapters_info.insert(0, {"title": "Front Matter", "start": 1, "level": 1})
 
     # Calculate non-overlapping page ranges
     for i in range(len(chapters_info)):
@@ -419,11 +447,6 @@ def main():
         next_start = chapters_info[i+1]["start"] if i + 1 < len(chapters_info) else doc.page_count + 1
         end = next_start - 1
         chapters_info[i]["end"] = max(start, end)
-
-    first_start = chapters_info[0]["start"] if chapters_info else 1
-    if first_start > 1:
-        stats.front_matter_pages = first_start - 1
-        chapters_info.insert(0, {"title": "Front Matter", "start": 1, "end": first_start - 1, "level": 1})
 
     chapter_objects = []
 

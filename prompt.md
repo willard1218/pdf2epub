@@ -28,8 +28,12 @@ Chapters & TOC
 • Use PDF bookmarks (outline) as chapter source
 • Build multi-level nested TOC
 • Parent nodes must be clickable
-• If pages exist before the first bookmark, create a “Front Matter” chapter
 • If no bookmarks, treat entire PDF as one chapter
+• Front Matter detection:
+  • Identify front-matter bookmarks by title keywords (e.g., contents/TOC/preface/foreword/目錄/前言/序)
+  • Use the first non-front-matter bookmark as the main content start
+  • If pages exist before main content, create a “Front Matter” chapter
+  • Remove front-matter bookmarks before main content to avoid overlap
 
 CRITICAL:
 • Chapter page ranges must be non-overlapping
