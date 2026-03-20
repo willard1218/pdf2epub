@@ -50,7 +50,7 @@ python pdf2epub.py book.pdf book.epub --no-images --no-tables
 - EPUB3 file
 - Chapters derived from PDF bookmarks
 - Multi-level TOC
-- Cover image
+- Cover image (largest image on page 1, or rendered at 200 DPI if missing)
 - Mobile-friendly CSS
 
 **Statistics Output**
@@ -72,6 +72,9 @@ After conversion, the tool prints:
 - Encrypted PDFs are tried with an empty password; on failure the program exits with a clear error.
 - Corrupted pages or invalid images are skipped and processing continues.
 - Complex layouts and fonts can affect reading order and fidelity.
+- Text reading order is reconstructed from block positions; multi-column pages are grouped by column, then by vertical order.
+- Tables are detected once per page and inserted as HTML tables; overlapping text blocks are removed.
+- Images smaller than 30x30 px are skipped as decorative.
 
 **Suitable PDFs**
 - Native PDFs (selectable text with embedded images)
@@ -87,6 +90,8 @@ After conversion, the tool prints:
 **Limitations & Known Issues**
 - Only works well on native PDFs that already contain real text and embedded images.
   Scanned/image-only PDFs cannot be converted into searchable text by this tool.
+- If a PDF has no bookmarks, the entire document becomes one chapter.
+- Reading order for complex multi-column or irregular layouts may still need manual review.
 
 **License**
 See `LICENSE`.
