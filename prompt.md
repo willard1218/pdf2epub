@@ -170,8 +170,8 @@ Statistics:
 Images
 
 Prefer extracting native embedded images (lossless)
-• Use get_images() ONCE per page
-• Do NOT call twice
+• Use get_images() during extraction
+• get_images() may be called again during fallback rendering
 
 Deduplication:
 • Use a global seen_hashes set (MD5)
@@ -272,7 +272,7 @@ EPUB Structure
 CSS (Mobile-Friendly)
 
 body:
-• font-family: CJK system stack
+• font-family: system UI stack (system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, etc.)
 • line-height: 1.8
 • text-align: justify
 • overflow-wrap: break-word
@@ -320,8 +320,8 @@ Dark mode:
 
 Performance
 • Avoid rendering unless necessary
-• Cache page-level computations
-• Do not call expensive APIs more than once per page
+• Cache page-level computations when possible
+• Minimize expensive API calls per page
 
 ⸻
 
@@ -359,8 +359,8 @@ After conversion, print:
 ⸻
 
 UX
-• Show terminal progress bar during chapter processing
-• Progress bar must include the current chapter title (truncate to 25 chars).
+• Show a one-line terminal progress status during chapter processing
+• Include the current chapter title (truncate to 25 chars).
 
 ⸻
 
@@ -371,4 +371,3 @@ Code Hygiene
 • No unused functions
 • Use one global seen_hashes set (cover + images)
 • Do not call find_tables() more than once per page
-
