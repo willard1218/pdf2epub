@@ -110,8 +110,12 @@ def normalize_author(author: str) -> str:
 
 
 def _is_traditional_cjk(text: str) -> bool:
-    # Small heuristic set of traditional-only characters.
-    trad = "體繁學國閱點證變與為體圖術關聯應廣臺灣際醫療門類經濟衛"
+    # Heuristic set of traditional-only characters (expanded).
+    trad = (
+        "臺灣體學國關證廣醫療衛經濟與為變點應發進實風險價值藝術專業"
+        "總統製導類場際門圖電資讀寫說請幣關鍵產業會議連續標準記錄"
+        "營運財務應對價錢歲數歷史編輯據圖書環境簡報資產風險"
+    )
     return any(ch in text for ch in trad)
 
 
