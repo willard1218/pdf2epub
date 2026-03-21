@@ -30,6 +30,8 @@ Chapters & TOC
 • Parent nodes must be clickable
 • If no bookmarks, treat entire PDF as one chapter
 • All bookmarks become chapters (multi-level chapters)
+• If multiple bookmarks point to the same page, only the first creates a chapter file
+  • The rest become TOC entries that link to anchors within that chapter
 • Front Matter detection:
   • Identify front-matter bookmarks by title keywords (e.g., contents/TOC/preface/foreword/目錄/前言/序)
   • Treat early title-page bookmarks (title matches book title within first ~15 pages) as front matter

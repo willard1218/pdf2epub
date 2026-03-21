@@ -416,6 +416,8 @@ def main():
     # Build TOC & Chapters
     toc = doc.get_toc()
     chapters_info = []
+    toc_entries: List[Dict[str, Any]] = []
+    anchors_by_page: Dict[int, List[str]] = {}
 
     def _norm_title(t: str) -> str:
         return re.sub(r'\s+', '', (t or "")).lower()
@@ -437,6 +439,7 @@ def main():
 
     if not toc:
         chapters_info.append({"title": title, "start": 1, "level": 1})
+        toc_entries.append({"title": title, "level": 1, "chap_idx": 0, "anchor": None})
     else:
         # Filter obvious front matter/title page bookmarks
         filtered = []
@@ -458,11 +461,31 @@ def main():
         if first_content_start and first_content_start > 1:
             stats.front_matter_pages = first_content_start - 1
             chapters_info.append({"title": "Front Matter", "start": 1, "level": 1})
+            toc_entries.append({"title": "Front Matter", "level": 1, "chap_idx": 0, "anchor": None})
+
+        last_chap_idx = len(chapters_info) - 1 if chapters_info else None
+        last_chap_start = chapters_info[last_chap_idx]["start"] if last_chap_idx is not None else None
+        anchor_counter = 0
 
         for level, t, p, is_front in filtered:
             if is_front and first_content_start and p < first_content_start:
                 continue
+            if last_chap_start == p and last_chap_idx is not None:
+                anchor_id = f"bm_{anchor_counter}"
+                anchor_counter += 1
+                anchors_by_page.setdefault(p, []).append(anchor_id)
+                toc_entries.append({
+                    "title": t,
+                    "level": level,
+                    "chap_idx": last_chap_idx,
+                    "anchor": anchor_id
+                })
+                continue
+
             chapters_info.append({"title": t, "start": p, "level": level})
+            last_chap_idx = len(chapters_info) - 1
+            last_chap_start = p
+            toc_entries.append({"title": t, "level": level, "chap_idx": last_chap_idx, "anchor": None})
 
     # Calculate non-overlapping page ranges
     for i in range(len(chapters_info)):
@@ -482,6 +505,7 @@ def main():
         epub_chapter.add_item(style)
         
         chap_html = f"<html><head></head><body>\n"
+        chapter_has_content = False
 
         carry_block = None
 
@@ -495,6 +519,11 @@ def main():
             except Exception as e:
                 print(f"\nWarning: Skipping corrupted page {p_num}: {e}")
                 continue
+
+            # Insert anchors at page start (for same-page bookmarks)
+            if p_num in anchors_by_page:
+                for anchor_id in anchors_by_page[p_num]:
+                    chap_html += f'<a id="{anchor_id}"></a>\n'
 
             elements = []
             page_height = page.rect.height
@@ -746,6 +775,7 @@ def main():
                     ]
                 else:
                     chap_html += process_text_html(carry_block['lines'], stats, carry_block['font_size']) + "\n"
+                    chapter_has_content = True
                 carry_block = None
 
             # Hold back last text block for potential merge with next page
@@ -764,13 +794,19 @@ def main():
                     continue
                 if e['type'] == 'text':
                     chap_html += process_text_html(e['block']['lines'], stats, e['block']['font_size']) + "\n"
+                    chapter_has_content = True
                 else:
                     chap_html += e['html'] + "\n"
+                    chapter_has_content = True
 
         # Flush any remaining carryover block at end of chapter
         if carry_block:
             chap_html += process_text_html(carry_block['lines'], stats, carry_block['font_size']) + "\n"
+            chapter_has_content = True
             carry_block = None
+
+        if not chapter_has_content:
+            chap_html += "<p></p>\n"
 
         chap_html += "</body></html>"
         epub_chapter.content = chap_html
@@ -781,13 +817,22 @@ def main():
 
     stats.epub_chapters = len(chapter_objects)
 
-    # Build Nested TOC (all bookmark-based chapters)
+    # Build Nested TOC (chapters + same-page anchors)
     nodes = []
     stack = [(0, nodes)]
-    for chap, epub_chap in zip(chapters_info, chapter_objects):
-        level = chap['level']
-        link = epub.Link(epub_chap.file_name, chap['title'], epub_chap.id)
-        node = Node(chap['title'], link)
+    for entry in toc_entries:
+        chap_idx = entry["chap_idx"]
+        epub_chap = chapter_objects[chap_idx]
+        if entry["anchor"]:
+            href = f"{epub_chap.file_name}#{entry['anchor']}"
+            uid = f"{epub_chap.id}_{entry['anchor']}"
+        else:
+            href = epub_chap.file_name
+            uid = epub_chap.id
+
+        link = epub.Link(href, entry["title"], uid)
+        node = Node(entry["title"], link)
+        level = entry["level"]
 
         while stack and stack[-1][0] >= level:
             stack.pop()
