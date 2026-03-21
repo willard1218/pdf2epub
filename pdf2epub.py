@@ -105,6 +105,7 @@ def normalize_author(author: str) -> str:
         return author
     author = author.strip()
     author = re.sub(r'^\s*作者\s*[：:]\s*', '', author)
+    author = re.sub(r'[\s　]*著$', '', author)
     return author.strip()
 
 
@@ -161,6 +162,85 @@ def extract_metadata(doc: fitz.Document) -> Tuple[str, str, str]:
             lang = 'zh-TW' if _is_traditional_cjk(sample_text) else 'zh'
 
     return title or "Untitled", author or "Unknown", lang
+
+
+def extract_additional_metadata(doc: fitz.Document, max_pages: int = 20) -> Dict[str, Any]:
+    """Extracts extra metadata fields from the first N pages if present."""
+    fields: Dict[str, Any] = {
+        "author": None,
+        "year": None,
+        "publisher": None,
+        "place": None,
+        "format": None,
+        "word_count": None,
+        "isbn": None,
+        "eisbn": None,
+    }
+
+    patterns = {
+        "author": re.compile(r'作者[:：]\s*(.+)'),
+        "year": re.compile(r'出版年[:：]\s*([12]\d{3})'),
+        "publisher": re.compile(r'出版社[:：]\s*(.+)'),
+        "place": re.compile(r'出版地[:：]\s*(.+)'),
+        "format": re.compile(r'格式[:：]\s*(.+)'),
+        "word_count": re.compile(r'字數[:：]\s*([\d,]+)'),
+        "eisbn": re.compile(r'EISBN[:：]?\s*([0-9Xx\\-]{10,20})'),
+        "isbn": re.compile(r'ISBN[:：]?\s*([0-9Xx\\-]{10,20})'),
+    }
+
+    for p in range(min(max_pages, doc.page_count)):
+        text = doc[p].get_text()
+        if not text:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            if not fields["author"]:
+                m = patterns["author"].search(line)
+                if m:
+                    fields["author"] = normalize_author(m.group(1))
+
+            if not fields["year"]:
+                m = patterns["year"].search(line)
+                if m:
+                    fields["year"] = m.group(1)
+
+            if not fields["publisher"]:
+                m = patterns["publisher"].search(line)
+                if m:
+                    fields["publisher"] = m.group(1).strip()
+
+            if not fields["place"]:
+                m = patterns["place"].search(line)
+                if m:
+                    fields["place"] = m.group(1).strip()
+
+            if not fields["format"]:
+                m = patterns["format"].search(line)
+                if m:
+                    fields["format"] = m.group(1).strip()
+
+            if not fields["word_count"]:
+                m = patterns["word_count"].search(line)
+                if m:
+                    fields["word_count"] = int(m.group(1).replace(",", ""))
+
+            if not fields["eisbn"]:
+                m = patterns["eisbn"].search(line)
+                if m:
+                    fields["eisbn"] = m.group(1).replace("-", "").strip()
+
+            if not fields["isbn"]:
+                m = patterns["isbn"].search(line)
+                if m:
+                    fields["isbn"] = m.group(1).replace("-", "").strip()
+
+        if all(fields.values()):
+            break
+
+    return fields
 
 
 def extract_cover(doc: fitz.Document, dpi: int, seen_hashes: Dict[str, str]) -> Tuple[bytes, str, str]:
@@ -381,12 +461,31 @@ def main():
     max_pages = min(args.max_pages, doc.page_count) if args.max_pages else doc.page_count
 
     title, author, lang = extract_metadata(doc)
+    extra_meta = extract_additional_metadata(doc)
+
+    if extra_meta.get("author") and (not author or author == "Unknown"):
+        author = extra_meta["author"]
 
     book = epub.EpubBook()
     book.set_identifier(f"id_{hashlib.md5(title.encode()).hexdigest()[:10]}")
     book.set_title(title)
     book.set_language(lang)
     book.add_author(author)
+
+    if extra_meta.get("publisher"):
+        book.add_metadata("DC", "publisher", extra_meta["publisher"])
+    if extra_meta.get("year"):
+        book.add_metadata("DC", "date", extra_meta["year"])
+    if extra_meta.get("place"):
+        book.add_metadata("DC", "coverage", extra_meta["place"])
+    if extra_meta.get("format"):
+        book.add_metadata("DC", "format", extra_meta["format"])
+    if extra_meta.get("word_count") is not None:
+        book.add_metadata("OPF", "meta", None, {"name": "word-count", "content": str(extra_meta["word_count"])})
+    if extra_meta.get("isbn"):
+        book.add_metadata("DC", "identifier", extra_meta["isbn"], {"id": "isbn"})
+    if extra_meta.get("eisbn"):
+        book.add_metadata("DC", "identifier", extra_meta["eisbn"], {"id": "eisbn"})
 
     # CSS
     style = epub.EpubItem(uid="style_nav", file_name="style/nav.css", media_type="text/css", content=CSS_CONTENT)
@@ -872,6 +971,13 @@ def main():
     print(f"Metadata Title:    {title}")
     print(f"Metadata Author:   {author}")
     print(f"Metadata Language: {lang}")
+    print(f"Metadata Publisher:{extra_meta.get('publisher') or 'Unknown'}")
+    print(f"Metadata Year:     {extra_meta.get('year') or 'Unknown'}")
+    print(f"Metadata Place:    {extra_meta.get('place') or 'Unknown'}")
+    print(f"Metadata Format:   {extra_meta.get('format') or 'Unknown'}")
+    print(f"Metadata Word Cnt: {extra_meta.get('word_count') if extra_meta.get('word_count') is not None else 'Unknown'}")
+    print(f"Metadata ISBN:     {extra_meta.get('isbn') or 'Unknown'}")
+    print(f"Metadata EISBN:    {extra_meta.get('eisbn') or 'Unknown'}")
     print(f"PDF Pages:         {stats.pdf_pages}")
     print(f"EPUB Chapters:     {stats.epub_chapters}")
     print(f"Front Matter Pages:{stats.front_matter_pages}")

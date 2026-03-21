@@ -227,6 +227,15 @@ Extract from PDF metadata:
 • title
 • author
 • language
+• If present in the PDF text, also extract and include:
+  • 作者 / Author
+  • 出版年
+  • 出版社
+  • 出版地
+  • 格式
+  • 字數
+  • ISBN
+  • EISBN
 
 Rules:
 • Do NOT use filename as title
