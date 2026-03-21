@@ -29,8 +29,10 @@ Chapters & TOC
 • Build multi-level nested TOC
 • Parent nodes must be clickable
 • If no bookmarks, treat entire PDF as one chapter
+• All bookmarks become chapters (multi-level chapters)
 • Front Matter detection:
   • Identify front-matter bookmarks by title keywords (e.g., contents/TOC/preface/foreword/目錄/前言/序)
+  • Treat early title-page bookmarks (title matches book title within first ~15 pages) as front matter
   • Use the first non-front-matter bookmark as the main content start
   • If pages exist before main content, create a “Front Matter” chapter
   • Remove front-matter bookmarks before main content to avoid overlap
@@ -246,7 +248,8 @@ Author normalization:
 • Strip leading “作者:” or “作者：” if present
 
 Language detection:
-• If CJK ratio > 30% → zh
+• Sample multiple pages
+• If CJK ratio > 30% → zh (or zh-TW if traditional characters are detected)
 • Otherwise default to en
 
 ⸻

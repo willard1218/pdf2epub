@@ -108,6 +108,12 @@ def normalize_author(author: str) -> str:
     return author.strip()
 
 
+def _is_traditional_cjk(text: str) -> bool:
+    # Small heuristic set of traditional-only characters.
+    trad = "體繁學國閱點證變與為體圖術關聯應廣臺灣際醫療門類經濟衛"
+    return any(ch in text for ch in trad)
+
+
 def extract_metadata(doc: fitz.Document) -> Tuple[str, str, str]:
     """Extracts or infers title, author, and language."""
     meta = doc.metadata
@@ -143,12 +149,16 @@ def extract_metadata(doc: fitz.Document) -> Tuple[str, str, str]:
                     break
             if author: break
 
-    # Fallback Language Detection
-    text_sample = doc[0].get_text() if doc.page_count > 0 else ""
-    if len(text_sample) > 0:
-        cjk_chars = len(re.findall(CJK_REGEX, text_sample))
-        if cjk_chars / len(text_sample) > 0.3:
-            lang = 'zh'
+    # Fallback Language Detection (sample multiple pages)
+    sample_text = ""
+    for p in range(min(5, doc.page_count)):
+        t = doc[p].get_text()
+        if t and t.strip():
+            sample_text += t
+    if len(sample_text) > 0:
+        cjk_chars = len(re.findall(CJK_REGEX, sample_text))
+        if cjk_chars / len(sample_text) > 0.3:
+            lang = 'zh-TW' if _is_traditional_cjk(sample_text) else 'zh'
 
     return title or "Untitled", author or "Unknown", lang
 
@@ -275,7 +285,7 @@ def process_text_html(lines: List[dict], stats: Stats, block_font_size: float) -
         stats.merged_soft_breaks += n_subs
 
         # Remove \n between CJK
-        joined, n_subs = re.subn(f'({CJK_REGEX})\n\s*({CJK_REGEX})', r'\1\2', joined)
+        joined, n_subs = re.subn(rf'({CJK_REGEX})\n\s*({CJK_REGEX})', r'\1\2', joined)
         stats.merged_soft_breaks += n_subs
 
         # Replace remaining \n with space
@@ -407,6 +417,9 @@ def main():
     toc = doc.get_toc()
     chapters_info = []
 
+    def _norm_title(t: str) -> str:
+        return re.sub(r'\s+', '', (t or "")).lower()
+
     def is_front_matter_title(t: str) -> bool:
         t = (t or "").strip().lower()
         if not t:
@@ -417,29 +430,39 @@ def main():
         ]
         return any(k in t for k in keywords)
 
+    def is_title_page(t: str, book_title: str, page_num: int) -> bool:
+        if page_num > 15:
+            return False
+        return _norm_title(t) == _norm_title(book_title)
+
     if not toc:
         chapters_info.append({"title": title, "start": 1, "level": 1})
     else:
-        for item in toc:
-            chapters_info.append({"title": item[1], "start": item[2], "level": item[0]})
+        # Filter obvious front matter/title page bookmarks
+        filtered = []
+        for level, t, p in toc:
+            if is_title_page(t, title, p):
+                continue
+            if is_front_matter_title(t):
+                filtered.append((level, t, p, True))
+            else:
+                filtered.append((level, t, p, False))
 
-        # Determine front matter based on first non-front-matter bookmark.
-        first_non_idx = None
-        for i, c in enumerate(chapters_info):
-            if not is_front_matter_title(c["title"]):
-                first_non_idx = i
+        # Determine first non-front-matter start
+        first_content_start = None
+        for level, t, p, is_front in filtered:
+            if not is_front:
+                first_content_start = p
                 break
 
-        if first_non_idx is not None:
-            first_content_start = chapters_info[first_non_idx]["start"]
-            if first_content_start > 1:
-                stats.front_matter_pages = first_content_start - 1
-                # Drop front-matter bookmarks before main content to avoid overlap.
-                chapters_info = [
-                    c for c in chapters_info
-                    if not (c["start"] < first_content_start and is_front_matter_title(c["title"]))
-                ]
-                chapters_info.insert(0, {"title": "Front Matter", "start": 1, "level": 1})
+        if first_content_start and first_content_start > 1:
+            stats.front_matter_pages = first_content_start - 1
+            chapters_info.append({"title": "Front Matter", "start": 1, "level": 1})
+
+        for level, t, p, is_front in filtered:
+            if is_front and first_content_start and p < first_content_start:
+                continue
+            chapters_info.append({"title": t, "start": p, "level": level})
 
     # Calculate non-overlapping page ranges
     for i in range(len(chapters_info)):
@@ -758,7 +781,7 @@ def main():
 
     stats.epub_chapters = len(chapter_objects)
 
-    # Build Nested TOC
+    # Build Nested TOC (all bookmark-based chapters)
     nodes = []
     stack = [(0, nodes)]
     for chap, epub_chap in zip(chapters_info, chapter_objects):
